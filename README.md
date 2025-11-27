@@ -12,7 +12,7 @@ Web-based SQL query interface for CSV files up to 1GB. Built with DuckDB-WASM fo
 
 ## Live Demo
 
-[![Deploy to Netlify](https://www.netlify.com/img/deploy/button.svg)](https://app.netlify.com/start/deploy?repository=YOUR_REPO)
+[![Deploy to Netlify](https://www.netlify.com/img/deploy/button.svg)](https://app.netlify.com/start/)
 
 Or use the Netlify CLI:
 ```bash
