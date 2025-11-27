@@ -163,7 +163,7 @@ SELECT
   a.department
 FROM tablename a
 JOIN tablename b ON a.department = b.department
-WHERE a.id < b.id
+WHERE a.employee_id < b.employee_id
 LIMIT 10;
 ```
 
