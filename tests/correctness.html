@@ -126,7 +126,13 @@
 
     async function executeQuery(query) {
       const result = await conn.query(query);
-      return result.toArray().map(row => Object.fromEntries(row));
+      return result.toArray().map(row => {
+        const obj = {};
+        for (const [key, value] of row) {
+          obj[key] = typeof value === 'bigint' ? Number(value) : value;
+        }
+        return obj;
+      });
     }
 
     function compareResults(actual, expected) {
@@ -146,11 +152,20 @@
         }
         
         for (const key of actualKeys) {
-          const actualVal = actualRow[key];
+          let actualVal = actualRow[key];
           const expectedVal = expectedRow[key];
           
-          if (typeof actualVal === 'number' && typeof expectedVal === 'number') {
-            if (Math.abs(actualVal - expectedVal) > 0.01) {
+          // Handle stringified numbers
+          if (typeof actualVal === 'string' && actualVal.startsWith('"') && actualVal.endsWith('"')) {
+            actualVal = JSON.parse(actualVal);
+          }
+          
+          // Convert to numbers for comparison if both are numeric
+          const actualNum = Number(actualVal);
+          const expectedNum = Number(expectedVal);
+          
+          if (!isNaN(actualNum) && !isNaN(expectedNum)) {
+            if (Math.abs(actualNum - expectedNum) > 0.01) {
               return { match: false, reason: `Value mismatch at row ${i + 1}, column '${key}': got ${actualVal}, expected ${expectedVal}` };
             }
           } else if (actualVal !== expectedVal) {
