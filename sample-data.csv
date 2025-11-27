@@ -1,0 +1,21 @@
+employee_id,name,department,salary,hire_date,email,status
+1,Alice Johnson,Engineering,145000,2019-03-12,alice.j@company.com,Active
+2,Bob Martinez,Sales,98000,2020-07-01,bob.m@company.com,Active
+3,Carol Lee,Engineering,158000,2018-11-23,carol.l@company.com,Active
+4,David Kim,Marketing,112000,2021-01-15,david.k@company.com,Active
+5,Eva Smith,Sales,102500,2022-05-03,eva.s@company.com,Active
+6,Frank Zhao,Engineering,132000,2020-09-30,frank.z@company.com,Active
+7,Grace Park,Marketing,105000,2019-08-14,grace.p@company.com,On Leave
+8,Henry Brown,Sales,95000,2021-06-22,henry.b@company.com,Active
+9,Iris Chen,Engineering,152000,2018-05-17,iris.c@company.com,Active
+10,Jack Wilson,Marketing,118000,2020-11-03,jack.w@company.com,Active
+11,Kate Davis,Engineering,140000,2019-06-20,kate.d@company.com,Active
+12,Leo Rodriguez,Sales,104000,2020-12-15,leo.r@company.com,Active
+13,Maya Patel,Marketing,115000,2021-03-08,maya.p@company.com,Active
+14,Nathan Green,Engineering,135000,2019-09-12,nathan.g@company.com,Active
+15,Olivia White,Sales,99000,2022-01-25,olivia.w@company.com,Active
+16,Paul Anderson,Marketing,108000,2020-05-18,paul.a@company.com,Active
+17,Quinn Taylor,Engineering,148000,2018-12-03,quinn.t@company.com,Active
+18,Rachel Moore,Sales,96000,2021-08-14,rachel.m@company.com,Inactive
+19,Sam Jackson,Marketing,113000,2020-02-29,sam.j@company.com,Active
+20,Tina Clark,Engineering,142000,2019-11-07,tina.c@company.com,Active

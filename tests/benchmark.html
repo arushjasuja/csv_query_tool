@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Benchmark Tests - CSV Query Tool</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 900px;
+      margin: 40px auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .container {
+      background: white;
+      padding: 30px;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    h1 {
+      color: #2c3e50;
+      margin-bottom: 10px;
+    }
+    .subtitle {
+      color: #7f8c8d;
+      margin-bottom: 30px;
+    }
+    button {
+      background: #3498db;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 4px;
+      font-size: 16px;
+      cursor: pointer;
+      margin-right: 10px;
+    }
+    button:hover {
+      background: #2980b9;
+    }
+    button:disabled {
+      background: #95a5a6;
+      cursor: not-allowed;
+    }
+    #results {
+      margin-top: 30px;
+      white-space: pre-wrap;
+      font-family: monospace;
+      background: #f8f9fa;
+      padding: 20px;
+      border-radius: 4px;
+      line-height: 1.6;
+    }
+    .pass {
+      color: #27ae60;
+      font-weight: bold;
+    }
+    .fail {
+      color: #e74c3c;
+      font-weight: bold;
+    }
+    #status {
+      margin: 20px 0;
+      padding: 12px;
+      border-radius: 4px;
+    }
+    #status.loading {
+      background: #d1ecf1;
+      color: #0c5460;
+      border: 1px solid #bee5eb;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Benchmark Tests</h1>
+    <p class="subtitle">Latency measurements for various file sizes and query types</p>
+    
+    <div>
+      <button id="test-10mb">Test 10MB</button>
+      <button id="test-100mb">Test 100MB</button>
+      <button id="test-500mb">Test 500MB</button>
+    </div>
+    
+    <div id="status"></div>
+    <div id="results"></div>
+  </div>
+
+  <script type="module">
+    import * as duckdb from 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.30.0/+esm';
+
+    let db = null;
+    let conn = null;
+
+    async function initDuckDB() {
+      const JSDELIVR_BUNDLES = duckdb.getJsDelivrBundles();
+      const bundle = await duckdb.selectBundle(JSDELIVR_BUNDLES);
+      
+      const worker_url = URL.createObjectURL(
+        new Blob([`importScripts("${bundle.mainWorker}");`], {type: 'text/javascript'})
+      );
+      
+      const worker = new Worker(worker_url);
+      const logger = new duckdb.ConsoleLogger();
+      db = new duckdb.AsyncDuckDB(logger, worker);
+      await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
+      URL.revokeObjectURL(worker_url);
+      
+      conn = await db.connect();
+      await conn.query("PRAGMA memory_limit='4GB'");
+    }
+
+    function generateCSV(rows) {
+      const columns = ['id', 'name', 'department', 'salary', 'hire_date', 'email', 'status'];
+      const departments = ['Engineering', 'Sales', 'Marketing', 'HR', 'Finance'];
+      const statuses = ['Active', 'Inactive', 'On Leave'];
+      
+      let csv = columns.join(',') + '\n';
+      
+      for (let i = 0; i < rows; i++) {
+        const row = [
+          i + 1,
+          `Employee${i}`,
+          departments[i % departments.length],
+          Math.floor(50000 + Math.random() * 100000),
+          `2020-${String(Math.floor(Math.random() * 12) + 1).padStart(2, '0')}-${String(Math.floor(Math.random() * 28) + 1).padStart(2, '0')}`,
+          `emp${i}@company.com`,
+          statuses[i % statuses.length]
+        ];
+        csv += row.join(',') + '\n';
+      }
+      
+      return csv;
+    }
+
+    async function loadCSV(csvData) {
+      const blob = new Blob([csvData], { type: 'text/csv' });
+      const file = new File([blob], 'test.csv', { type: 'text/csv' });
+      
+      await db.registerFileHandle('test.csv', file, duckdb.DuckDBDataProtocol.BROWSER_FILEREADER, true);
+      
+      try {
+        await conn.query('DROP TABLE IF EXISTS tablename');
+      } catch (e) {}
+      
+      await conn.query("CREATE TABLE tablename AS SELECT * FROM read_csv_auto('test.csv')");
+    }
+
+    async function executeQuery(query) {
+      const startTime = performance.now();
+      await conn.query(query);
+      return performance.now() - startTime;
+    }
+
+    async function runBenchmark(sizeLabel, rows, targets) {
+      const resultsDiv = document.getElementById('results');
+      const statusDiv = document.getElementById('status');
+      
+      statusDiv.className = 'loading';
+      statusDiv.textContent = `Generating ${sizeLabel} CSV (${rows.toLocaleString()} rows)...`;
+      
+      const csvData = generateCSV(rows);
+      const sizeBytes = new Blob([csvData]).size;
+      
+      statusDiv.textContent = `Loading ${sizeLabel} CSV into DuckDB...`;
+      const loadStart = performance.now();
+      await loadCSV(csvData);
+      const loadTime = performance.now() - loadStart;
+      
+      const benchmarks = [
+        {
+          name: 'Simple SELECT',
+          query: 'SELECT * FROM tablename LIMIT 1000',
+          target: targets.select
+        },
+        {
+          name: 'Filtered SELECT',
+          query: 'SELECT * FROM tablename WHERE salary > 80000',
+          target: targets.select
+        },
+        {
+          name: 'Aggregation',
+          query: 'SELECT department, AVG(salary) as avg_sal FROM tablename GROUP BY department',
+          target: targets.groupBy
+        },
+        {
+          name: 'Complex Aggregation',
+          query: 'SELECT department, COUNT(*) as cnt, AVG(salary) as avg_sal, MAX(salary) as max_sal FROM tablename GROUP BY department ORDER BY avg_sal DESC',
+          target: targets.groupBy
+        },
+        {
+          name: 'Window Function',
+          query: 'SELECT department, salary, AVG(salary) OVER (PARTITION BY department) as dept_avg FROM tablename LIMIT 1000',
+          target: targets.groupBy * 1.5
+        }
+      ];
+      
+      statusDiv.textContent = `Running ${benchmarks.length} queries...`;
+      
+      let output = `\nBenchmark Results - ${sizeLabel}\n`;
+      output += '='.repeat(50) + '\n';
+      output += `File Size: ${(sizeBytes / 1024 / 1024).toFixed(2)} MB (${rows.toLocaleString()} rows)\n`;
+      output += `Load Time: ${loadTime.toFixed(2)}ms\n`;
+      output += '\n';
+      
+      let allPassed = true;
+      
+      for (const benchmark of benchmarks) {
+        const time = await executeQuery(benchmark.query);
+        const passed = time <= benchmark.target;
+        allPassed = allPassed && passed;
+        
+        const status = passed ? '✓' : '✗';
+        const statusClass = passed ? 'pass' : 'fail';
+        output += `${benchmark.name}: ${time.toFixed(2)}ms <span class="${statusClass}">${status}</span> (target: ${benchmark.target}ms)\n`;
+      }
+      
+      output += '\n';
+      output += allPassed ? '<span class="pass">All benchmarks passed!</span>' : '<span class="fail">Some benchmarks failed</span>';
+      output += '\n\n';
+      
+      resultsDiv.innerHTML += output;
+      statusDiv.className = '';
+      statusDiv.textContent = '';
+    }
+
+    document.addEventListener('DOMContentLoaded', async () => {
+      await initDuckDB();
+      
+      document.getElementById('test-10mb').addEventListener('click', async () => {
+        document.getElementById('test-10mb').disabled = true;
+        await runBenchmark('10MB', 100000, { select: 100, groupBy: 200 });
+        document.getElementById('test-10mb').disabled = false;
+      });
+      
+      document.getElementById('test-100mb').addEventListener('click', async () => {
+        document.getElementById('test-100mb').disabled = true;
+        await runBenchmark('100MB', 1000000, { select: 100, groupBy: 500 });
+        document.getElementById('test-100mb').disabled = false;
+      });
+      
+      document.getElementById('test-500mb').addEventListener('click', async () => {
+        document.getElementById('test-500mb').disabled = true;
+        await runBenchmark('500MB', 5000000, { select: 500, groupBy: 5000 });
+        document.getElementById('test-500mb').disabled = false;
+      });
+    });
+  </script>
+</body>
+</html>

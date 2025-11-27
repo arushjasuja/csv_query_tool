@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Correctness Tests - CSV Query Tool</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 900px;
+      margin: 40px auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .container {
+      background: white;
+      padding: 30px;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    h1 {
+      color: #2c3e50;
+      margin-bottom: 10px;
+    }
+    .subtitle {
+      color: #7f8c8d;
+      margin-bottom: 30px;
+    }
+    button {
+      background: #3498db;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 4px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #2980b9;
+    }
+    button:disabled {
+      background: #95a5a6;
+      cursor: not-allowed;
+    }
+    #results {
+      margin-top: 30px;
+      white-space: pre-wrap;
+      font-family: monospace;
+      background: #f8f9fa;
+      padding: 20px;
+      border-radius: 4px;
+      line-height: 1.8;
+    }
+    .pass {
+      color: #27ae60;
+      font-weight: bold;
+    }
+    .fail {
+      color: #e74c3c;
+      font-weight: bold;
+    }
+    .detail {
+      color: #666;
+      font-size: 0.9em;
+      margin-left: 20px;
+    }
+    #status {
+      margin: 20px 0;
+      padding: 12px;
+      border-radius: 4px;
+    }
+    #status.loading {
+      background: #d1ecf1;
+      color: #0c5460;
+      border: 1px solid #bee5eb;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Correctness Tests</h1>
+    <p class="subtitle">Verify query results match expected values</p>
+    
+    <button id="run-tests">Run Correctness Tests</button>
+    
+    <div id="status"></div>
+    <div id="results"></div>
+  </div>
+
+  <script type="module">
+    import * as duckdb from 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.30.0/+esm';
+
+    let db = null;
+    let conn = null;
+
+    async function initDuckDB() {
+      const JSDELIVR_BUNDLES = duckdb.getJsDelivrBundles();
+      const bundle = await duckdb.selectBundle(JSDELIVR_BUNDLES);
+      
+      const worker_url = URL.createObjectURL(
+        new Blob([`importScripts("${bundle.mainWorker}");`], {type: 'text/javascript'})
+      );
+      
+      const worker = new Worker(worker_url);
+      const logger = new duckdb.ConsoleLogger();
+      db = new duckdb.AsyncDuckDB(logger, worker);
+      await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
+      URL.revokeObjectURL(worker_url);
+      
+      conn = await db.connect();
+      await conn.query("PRAGMA memory_limit='4GB'");
+    }
+
+    async function loadCSV(csvData) {
+      const blob = new Blob([csvData], { type: 'text/csv' });
+      const file = new File([blob], 'test.csv', { type: 'text/csv' });
+      
+      await db.registerFileHandle('test.csv', file, duckdb.DuckDBDataProtocol.BROWSER_FILEREADER, true);
+      
+      try {
+        await conn.query('DROP TABLE IF EXISTS tablename');
+      } catch (e) {}
+      
+      await conn.query("CREATE TABLE tablename AS SELECT * FROM read_csv_auto('test.csv')");
+    }
+
+    async function executeQuery(query) {
+      const result = await conn.query(query);
+      return result.toArray().map(row => Object.fromEntries(row));
+    }
+
+    function compareResults(actual, expected) {
+      if (actual.length !== expected.length) {
+        return { match: false, reason: `Row count mismatch: got ${actual.length}, expected ${expected.length}` };
+      }
+      
+      for (let i = 0; i < actual.length; i++) {
+        const actualRow = actual[i];
+        const expectedRow = expected[i];
+        
+        const actualKeys = Object.keys(actualRow).sort();
+        const expectedKeys = Object.keys(expectedRow).sort();
+        
+        if (JSON.stringify(actualKeys) !== JSON.stringify(expectedKeys)) {
+          return { match: false, reason: `Column mismatch at row ${i + 1}` };
+        }
+        
+        for (const key of actualKeys) {
+          const actualVal = actualRow[key];
+          const expectedVal = expectedRow[key];
+          
+          if (typeof actualVal === 'number' && typeof expectedVal === 'number') {
+            if (Math.abs(actualVal - expectedVal) > 0.01) {
+              return { match: false, reason: `Value mismatch at row ${i + 1}, column '${key}': got ${actualVal}, expected ${expectedVal}` };
+            }
+          } else if (actualVal !== expectedVal) {
+            return { match: false, reason: `Value mismatch at row ${i + 1}, column '${key}': got ${actualVal}, expected ${expectedVal}` };
+          }
+        }
+      }
+      
+      return { match: true };
+    }
+
+    async function runTests() {
+      const resultsDiv = document.getElementById('results');
+      const statusDiv = document.getElementById('status');
+      const runButton = document.getElementById('run-tests');
+      
+      runButton.disabled = true;
+      statusDiv.className = 'loading';
+      statusDiv.textContent = 'Setting up test data...';
+      
+      const testData = `id,name,department,salary,hire_date
+1,Alice,Engineering,145000,2019-03-12
+2,Bob,Sales,98000,2020-07-01
+3,Carol,Engineering,158000,2018-11-23
+4,David,Marketing,112000,2021-01-15
+5,Eva,Sales,102500,2022-05-03
+6,Frank,Engineering,132000,2020-09-30
+7,Grace,Marketing,105000,2019-08-14
+8,Henry,Sales,95000,2021-06-22
+9,Iris,Engineering,152000,2018-05-17
+10,Jack,Marketing,118000,2020-11-03`;
+
+      await loadCSV(testData);
+      
+      const tests = [
+        {
+          name: 'COUNT',
+          query: 'SELECT COUNT(*) as cnt FROM tablename',
+          expected: [{ cnt: 10 }]
+        },
+        {
+          name: 'Filtered COUNT',
+          query: 'SELECT COUNT(*) as cnt FROM tablename WHERE salary > 120000',
+          expected: [{ cnt: 4 }]
+        },
+        {
+          name: 'AVG',
+          query: 'SELECT ROUND(AVG(salary), 2) as avg_salary FROM tablename',
+          expected: [{ avg_salary: 121750 }]
+        },
+        {
+          name: 'SUM',
+          query: 'SELECT SUM(salary) as total_salary FROM tablename',
+          expected: [{ total_salary: 1217500 }]
+        },
+        {
+          name: 'MIN/MAX',
+          query: 'SELECT MIN(salary) as min_sal, MAX(salary) as max_sal FROM tablename',
+          expected: [{ min_sal: 95000, max_sal: 158000 }]
+        },
+        {
+          name: 'GROUP BY',
+          query: 'SELECT department, COUNT(*) as cnt FROM tablename GROUP BY department ORDER BY department',
+          expected: [
+            { department: 'Engineering', cnt: 4 },
+            { department: 'Marketing', cnt: 3 },
+            { department: 'Sales', cnt: 3 }
+          ]
+        },
+        {
+          name: 'Filtered with ORDER BY',
+          query: 'SELECT name FROM tablename WHERE salary > 130000 ORDER BY name',
+          expected: [
+            { name: 'Alice' },
+            { name: 'Carol' },
+            { name: 'Frank' },
+            { name: 'Iris' }
+          ]
+        },
+        {
+          name: 'Complex Aggregation',
+          query: 'SELECT department, COUNT(*) as cnt, ROUND(AVG(salary), 2) as avg_sal FROM tablename GROUP BY department ORDER BY avg_sal DESC',
+          expected: [
+            { department: 'Engineering', cnt: 4, avg_sal: 146750 },
+            { department: 'Marketing', cnt: 3, avg_sal: 111666.67 },
+            { department: 'Sales', cnt: 3, avg_sal: 98500 }
+          ]
+        },
+        {
+          name: 'WHERE with AND',
+          query: 'SELECT COUNT(*) as cnt FROM tablename WHERE department = \'Engineering\' AND salary > 140000',
+          expected: [{ cnt: 3 }]
+        },
+        {
+          name: 'DISTINCT',
+          query: 'SELECT COUNT(DISTINCT department) as dept_count FROM tablename',
+          expected: [{ dept_count: 3 }]
+        }
+      ];
+      
+      let output = '\nCorrectness Tests\n';
+      output += '='.repeat(50) + '\n\n';
+      
+      let passed = 0;
+      
+      for (const test of tests) {
+        statusDiv.textContent = `Running: ${test.name}...`;
+        
+        try {
+          const actual = await executeQuery(test.query);
+          const comparison = compareResults(actual, test.expected);
+          
+          if (comparison.match) {
+            output += `<span class="pass">✓ ${test.name}</span>\n`;
+            output += `<span class="detail">Query: ${test.query}</span>\n\n`;
+            passed++;
+          } else {
+            output += `<span class="fail">✗ ${test.name}</span>\n`;
+            output += `<span class="detail">Query: ${test.query}</span>\n`;
+            output += `<span class="detail">Error: ${comparison.reason}</span>\n`;
+            output += `<span class="detail">Expected: ${JSON.stringify(test.expected)}</span>\n`;
+            output += `<span class="detail">Got: ${JSON.stringify(actual)}</span>\n\n`;
+          }
+        } catch (error) {
+          output += `<span class="fail">✗ ${test.name}</span>\n`;
+          output += `<span class="detail">Query: ${test.query}</span>\n`;
+          output += `<span class="detail">Error: ${error.message}</span>\n\n`;
+        }
+      }
+      
+      output += '='.repeat(50) + '\n';
+      if (passed === tests.length) {
+        output += `<span class="pass">All tests passed: ${passed}/${tests.length}</span>\n`;
+      } else {
+        output += `<span class="fail">Tests passed: ${passed}/${tests.length}</span>\n`;
+      }
+      
+      resultsDiv.innerHTML = output;
+      statusDiv.className = '';
+      statusDiv.textContent = '';
+      runButton.disabled = false;
+    }
+
+    document.addEventListener('DOMContentLoaded', async () => {
+      await initDuckDB();
+      
+      document.getElementById('run-tests').addEventListener('click', runTests);
+    });
+  </script>
+</body>
+</html>

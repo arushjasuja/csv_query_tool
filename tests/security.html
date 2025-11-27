@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Security Tests - CSV Query Tool</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 900px;
+      margin: 40px auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .container {
+      background: white;
+      padding: 30px;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    h1 {
+      color: #2c3e50;
+      margin-bottom: 10px;
+    }
+    .subtitle {
+      color: #7f8c8d;
+      margin-bottom: 30px;
+    }
+    button {
+      background: #3498db;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 4px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #2980b9;
+    }
+    button:disabled {
+      background: #95a5a6;
+      cursor: not-allowed;
+    }
+    #results {
+      margin-top: 30px;
+      white-space: pre-wrap;
+      font-family: monospace;
+      background: #f8f9fa;
+      padding: 20px;
+      border-radius: 4px;
+      line-height: 1.8;
+    }
+    .pass {
+      color: #27ae60;
+      font-weight: bold;
+    }
+    .fail {
+      color: #e74c3c;
+      font-weight: bold;
+    }
+    .test-query {
+      color: #666;
+      font-size: 0.9em;
+      margin-left: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Security Tests</h1>
+    <p class="subtitle">SQL injection and malicious query prevention</p>
+    
+    <button id="run-tests">Run Security Tests</button>
+    
+    <div id="results"></div>
+  </div>
+
+  <script src="../validate.js"></script>
+  <script>
+    const maliciousQueries = [
+      {
+        name: 'DROP TABLE',
+        query: 'DROP TABLE tablename'
+      },
+      {
+        name: 'DELETE',
+        query: 'DELETE FROM tablename WHERE 1=1'
+      },
+      {
+        name: 'INSERT',
+        query: 'INSERT INTO tablename VALUES (1, 2, 3)'
+      },
+      {
+        name: 'UPDATE',
+        query: 'UPDATE tablename SET salary = 0'
+      },
+      {
+        name: 'CREATE TABLE',
+        query: 'CREATE TABLE evil (id INT)'
+      },
+      {
+        name: 'ALTER TABLE',
+        query: 'ALTER TABLE tablename ADD COLUMN hacked INT'
+      },
+      {
+        name: 'TRUNCATE',
+        query: 'TRUNCATE TABLE tablename'
+      },
+      {
+        name: 'SQL Injection Pattern',
+        query: "SELECT * FROM tablename; DROP TABLE tablename; --"
+      },
+      {
+        name: 'EXEC Command',
+        query: 'EXEC sp_executesql @cmd'
+      },
+      {
+        name: 'No SELECT Statement',
+        query: 'SHOW TABLES'
+      }
+    ];
+
+    const validQueries = [
+      {
+        name: 'Basic SELECT',
+        query: 'SELECT * FROM tablename LIMIT 10'
+      },
+      {
+        name: 'Filtered SELECT',
+        query: 'SELECT name, salary FROM tablename WHERE salary > 50000'
+      },
+      {
+        name: 'Aggregation',
+        query: 'SELECT department, AVG(salary) FROM tablename GROUP BY department'
+      },
+      {
+        name: 'Complex Query',
+        query: 'SELECT department, COUNT(*) as cnt FROM tablename WHERE salary > 50000 GROUP BY department ORDER BY cnt DESC'
+      },
+      {
+        name: 'Window Function',
+        query: 'SELECT name, salary, ROW_NUMBER() OVER (ORDER BY salary DESC) as rank FROM tablename'
+      }
+    ];
+
+    function runTests() {
+      const resultsDiv = document.getElementById('results');
+      const runButton = document.getElementById('run-tests');
+      
+      runButton.disabled = true;
+      
+      let output = '\nSecurity Tests\n';
+      output += '='.repeat(50) + '\n\n';
+      output += 'Testing Malicious Queries (should be blocked):\n';
+      output += '-'.repeat(50) + '\n';
+      
+      let maliciousTestsPassed = 0;
+      
+      for (const test of maliciousQueries) {
+        try {
+          validateQuery(test.query);
+          output += `<span class="fail">✗ ${test.name} - NOT BLOCKED (SECURITY RISK)</span>\n`;
+          output += `<span class="test-query">Query: ${test.query}</span>\n\n`;
+        } catch (error) {
+          output += `<span class="pass">✓ ${test.name} - Blocked</span>\n`;
+          output += `<span class="test-query">Error: ${error.message}</span>\n\n`;
+          maliciousTestsPassed++;
+        }
+      }
+      
+      output += `\nMalicious Queries Blocked: ${maliciousTestsPassed}/${maliciousQueries.length}\n\n`;
+      
+      output += '\nTesting Valid Queries (should be allowed):\n';
+      output += '-'.repeat(50) + '\n';
+      
+      let validTestsPassed = 0;
+      
+      for (const test of validQueries) {
+        try {
+          validateQuery(test.query);
+          output += `<span class="pass">✓ ${test.name} - Allowed</span>\n`;
+          output += `<span class="test-query">Query: ${test.query}</span>\n\n`;
+          validTestsPassed++;
+        } catch (error) {
+          output += `<span class="fail">✗ ${test.name} - Incorrectly Blocked</span>\n`;
+          output += `<span class="test-query">Error: ${error.message}</span>\n\n`;
+        }
+      }
+      
+      output += `\nValid Queries Allowed: ${validTestsPassed}/${validQueries.length}\n\n`;
+      
+      const totalPassed = maliciousTestsPassed + validTestsPassed;
+      const totalTests = maliciousQueries.length + validQueries.length;
+      
+      output += '='.repeat(50) + '\n';
+      if (totalPassed === totalTests) {
+        output += `<span class="pass">All tests passed: ${totalPassed}/${totalTests}</span>\n`;
+      } else {
+        output += `<span class="fail">Tests passed: ${totalPassed}/${totalTests}</span>\n`;
+      }
+      
+      resultsDiv.innerHTML = output;
+      runButton.disabled = false;
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('run-tests').addEventListener('click', runTests);
+    });
+  </script>
+</body>
+</html>

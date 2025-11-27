@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CSV Query Tool</title>
+  <meta http-equiv="Content-Security-Policy" 
+        content="default-src 'self'; 
+                 script-src 'self' 'wasm-unsafe-eval' https://cdn.jsdelivr.net; 
+                 style-src 'self' 'unsafe-inline'; 
+                 connect-src 'none';">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    <h1>CSV Query Tool</h1>
+    <p class="subtitle">High-performance SQL queries on CSV files up to 1GB</p>
+    
+    <div class="upload-section">
+      <label for="file-input">Upload CSV File:</label>
+      <input type="file" id="file-input" accept=".csv" disabled>
+      <span id="file-info"></span>
+    </div>
+
+    <div class="query-section">
+      <label for="query">SQL Query:</label>
+      <textarea id="query" placeholder="SELECT * FROM tablename LIMIT 10" disabled></textarea>
+      <button id="execute-btn" disabled>Execute Query</button>
+      <small>Tip: Press Ctrl+Enter to execute | Table name is always "tablename"</small>
+    </div>
+
+    <div class="status-section">
+      <div id="status"></div>
+    </div>
+
+    <div class="results-section">
+      <div id="results"></div>
+    </div>
+  </div>
+
+  <script>
+    if (typeof SharedArrayBuffer === 'undefined') {
+      document.body.innerHTML = `
+        <div style="padding: 40px; max-width: 600px; margin: 40px auto; background: white; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+          <h2 style="color: #e74c3c;">Browser Not Supported</h2>
+          <p>This application requires SharedArrayBuffer support, which is currently unavailable.</p>
+          <p><strong>Requirements:</strong></p>
+          <ul style="margin: 20px 0; line-height: 1.8;">
+            <li>HTTPS connection (automatic on Netlify)</li>
+            <li>COOP/COEP headers configured (automatic via netlify.toml)</li>
+            <li>Chrome 92+, Firefox 95+, or Safari 15.2+</li>
+          </ul>
+          <p><strong>For local development:</strong></p>
+          <ul style="margin: 20px 0; line-height: 1.8;">
+            <li>Use a web server with proper headers (not file:// protocol)</li>
+            <li>Example: <code style="background: #f5f5f5; padding: 2px 6px;">python -m http.server 8000</code></li>
+          </ul>
+        </div>
+      `;
+    }
+  </script>
+  <script src="validate.js"></script>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
